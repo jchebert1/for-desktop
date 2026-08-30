@@ -172,9 +172,11 @@ const config: ForgeConfig = {
   publishers: [
     new PublisherGithub({
       repository: {
-        owner: "stoatchat",
+        owner: "jchebert1",
         name: "for-desktop",
       },
+      // publish immediately (not as a draft) so update.electronjs.org can see it
+      draft: false,
     }),
   ],
 };
