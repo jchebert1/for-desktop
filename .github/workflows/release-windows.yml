@@ -1,0 +1,55 @@
+name: Release (Windows, bear-net build)
+
+# Builds the Windows installer + portable zip and publishes them as a GitHub
+# Release on this fork. The desktop app's auto-updater (update-electron-app ->
+# update.electronjs.org) reads releases from this repo, so every friend who
+# installed once gets future releases automatically.
+#
+# To cut a release:
+#   1. bump "version" in package.json (e.g. 1.5.3 -> 1.5.4) and commit
+#   2. git tag v<that version>   (e.g. v1.5.4)
+#   3. git push --tags
+# ...or run this workflow manually from the Actions tab (workflow_dispatch),
+# which publishes a release tagged with the current package.json version.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-windows:
+    name: Build & publish Windows installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Checkout Stoat brand assets
+        run: git -c submodule."assets".update=checkout submodule update --init assets
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build & publish to GitHub Releases
+        run: pnpm run publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
