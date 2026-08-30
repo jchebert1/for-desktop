@@ -217,3 +217,21 @@ ipcMain.on("config", (_, newConfig: Partial<DesktopConfig>) => {
     ([key, value]) => (config[key as keyof DesktopConfig] = value as never),
   );
 });
+
+// Synchronous configuration fetch used by the preload so that
+// `window.desktopConfig.get()` returns a populated object before any
+// renderer script runs. Without this the renderer can read the config
+// (e.g. windowState) before the async "config" IPC arrives, throwing and
+// blocking the first paint (blank window).
+ipcMain.on("getConfigSync", (event) => {
+  event.returnValue = {
+    firstLaunch: config.firstLaunch,
+    customFrame: config.customFrame,
+    minimiseToTray: config.minimiseToTray,
+    startMinimisedToTray: config.startMinimisedToTray,
+    spellchecker: config.spellchecker,
+    hardwareAcceleration: config.hardwareAcceleration,
+    discordRpc: config.discordRpc,
+    windowState: config.windowState,
+  } satisfies DesktopConfig;
+});
