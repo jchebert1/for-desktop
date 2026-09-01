@@ -1,22 +1,25 @@
 name: Release (macOS, bear-net build)
 
-# Builds the macOS app (zipped .app) for Apple Silicon and Intel and attaches
-# both to the GitHub Release matching the current package.json version.
+# Builds the macOS app (zipped .app) for Apple Silicon and Intel, ad-hoc
+# signs it, and attaches both zips to the GitHub Release matching the current
+# package.json version.
 #
 # This is deliberately independent of release-windows.yml:
 #   - manual trigger only (workflow_dispatch) - it never runs on its own
 #   - it does not change package.json, forge.config.ts or any source file
-#   - the GitHub publisher only ADDS assets to an existing release; it never
-#     deletes or replaces the Windows installer/RELEASES/nupkg already there
+#   - it uploads ONLY the two macOS zips (Stoat-darwin-*.zip) with `gh`; the
+#     Windows installer / RELEASES / nupkg on the release are never touched
 #
-# NOTE: these builds are NOT code-signed or notarized (no Apple Developer
-# account). Consequences for macOS users:
-#   - first launch is blocked by Gatekeeper; open via System Settings ->
-#     Privacy & Security -> "Open Anyway", or run:
-#       xattr -dr com.apple.quarantine /Applications/Stoat.app
-#   - auto-update does not work on macOS for unsigned apps
-#     (update-electron-app requires code signing on macOS), so macOS users
-#     re-download new versions from the Releases page by hand.
+# Signing: the app is AD-HOC signed on the runner (codesign --sign -). This is
+# not a Developer ID signature and is not notarized (no Apple Developer
+# account), so on first launch macOS shows "Apple could not verify ..." and the
+# user must click System Settings -> Privacy & Security -> "Open Anyway" once.
+# Without the ad-hoc signature macOS reports the app as "damaged" and offers no
+# way through except Terminal, which is why this step exists.
+#
+# Auto-update does not work on macOS for apps that are not Developer-ID signed
+# (update-electron-app requires code signing on macOS), so macOS users
+# re-download new versions from the Releases page by hand.
 
 on:
   workflow_dispatch:
@@ -61,7 +64,24 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build & publish to GitHub Releases
-        run: pnpm run publish
+      - name: Package app
+        run: pnpm exec electron-forge package --arch=${{ matrix.arch }}
+
+      - name: Ad-hoc sign app
+        run: |
+          APP="out/Stoat-darwin-${{ matrix.arch }}/Stoat.app"
+          test -d "$APP" || { echo "app bundle not found at $APP"; ls -R out | head -50; exit 1; }
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Zip app
+        run: pnpm exec electron-forge make --skip-package --arch=${{ matrix.arch }}
+
+      - name: Upload macOS zip to the release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          ZIP="$(ls out/make/zip/darwin/${{ matrix.arch }}/Stoat-darwin-${{ matrix.arch }}-*.zip)"
+          echo "Uploading $ZIP to release v$VERSION"
+          gh release upload "v$VERSION" "$ZIP" --clobber
