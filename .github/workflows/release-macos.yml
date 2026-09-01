@@ -1,0 +1,67 @@
+name: Release (macOS, bear-net build)
+
+# Builds the macOS app (zipped .app) for Apple Silicon and Intel and attaches
+# both to the GitHub Release matching the current package.json version.
+#
+# This is deliberately independent of release-windows.yml:
+#   - manual trigger only (workflow_dispatch) - it never runs on its own
+#   - it does not change package.json, forge.config.ts or any source file
+#   - the GitHub publisher only ADDS assets to an existing release; it never
+#     deletes or replaces the Windows installer/RELEASES/nupkg already there
+#
+# NOTE: these builds are NOT code-signed or notarized (no Apple Developer
+# account). Consequences for macOS users:
+#   - first launch is blocked by Gatekeeper; open via System Settings ->
+#     Privacy & Security -> "Open Anyway", or run:
+#       xattr -dr com.apple.quarantine /Applications/Stoat.app
+#   - auto-update does not work on macOS for unsigned apps
+#     (update-electron-app requires code signing on macOS), so macOS users
+#     re-download new versions from the Releases page by hand.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-macos:
+    name: Build & publish macOS (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest      # Apple Silicon (arm64)
+            arch: arm64
+          - os: macos-26-intel    # Intel (x64)
+            arch: x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Checkout Stoat brand assets
+        run: git -c submodule."assets".update=checkout submodule update --init assets
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build & publish to GitHub Releases
+        run: pnpm run publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
